@@ -69,6 +69,8 @@ export default function ExploreScreen() {
     return stars.join('');
   };
 
+  const allowedCategories = ['Electronics', 'Fashion', 'Beauty'];
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
@@ -81,7 +83,7 @@ export default function ExploreScreen() {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Categories</Text>
           <View style={styles.categoriesGrid}>
-            {categories.map(category => (
+            {categories.filter(category => allowedCategories.includes(category.name)).map(category => (
               <TouchableOpacity
                 key={category.id}
                 style={[styles.categoryCard, { backgroundColor: colors.background, borderColor: colors.tabIconDefault }]}

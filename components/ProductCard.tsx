@@ -6,10 +6,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  Alert,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
 import { Product } from '@/data/products';
+import { useCart } from '@/contexts/CartContext';
 
 interface ProductCardProps {
   product: Product;
@@ -22,6 +25,8 @@ const cardWidth = (width - 48) / 2; // 2 columns with padding
 export default function ProductCard({ product, onPress }: ProductCardProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
+  const router = useRouter();
+  const { addToCart } = useCart();
 
   const formatPrice = (price: number) => {
     return `₹${price.toFixed(0)}`;
@@ -49,7 +54,7 @@ export default function ProductCard({ product, onPress }: ProductCardProps) {
   return (
     <TouchableOpacity
       style={[styles.container, { backgroundColor: colors.background }]}
-      onPress={() => onPress(product)}
+      onPress={() => router.push(`/product/${product.id}` as any)}
       activeOpacity={0.8}
     >
       <View style={styles.imageContainer}>
@@ -113,6 +118,19 @@ export default function ProductCard({ product, onPress }: ProductCardProps) {
         >
           {product.description}
         </Text>
+
+        {/* Quick Add to Cart Button */}
+        <TouchableOpacity
+          style={[styles.addToCartButton, { backgroundColor: colors.tint }]}
+          onPress={(e) => {
+            e.stopPropagation();
+            addToCart(product);
+            Alert.alert('Success', `${product.name} added to cart!`);
+          }}
+          disabled={!product.inStock}
+        >
+          <Text style={styles.addToCartText}>+ Add to Cart</Text>
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
@@ -227,5 +245,17 @@ const styles = StyleSheet.create({
   description: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  addToCartButton: {
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  addToCartText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 }); 

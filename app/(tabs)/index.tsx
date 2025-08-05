@@ -9,6 +9,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
 import { products, Product, filterOptions } from '@/data/products';
@@ -30,10 +31,13 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { addToCart } = useCart();
+  const router = useRouter();
+
+  const allowedCategories = ['Electronics', 'Fashion', 'Beauty'];
 
   // Filter and sort products
   const filteredProducts = useMemo(() => {
-    let filtered = products;
+    let filtered = products.filter(product => allowedCategories.includes(product.category));
 
     // Search filter
     if (searchQuery) {
@@ -126,7 +130,7 @@ export default function HomeScreen() {
         { 
           text: 'View Details', 
           onPress: () => {
-            Alert.alert('Product Details', `Detailed view for ${product.name} would be shown here.`);
+            router.push(`/product/${product.id}` as any);
           }
         },
         { text: 'Cancel', style: 'cancel' },
