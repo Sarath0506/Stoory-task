@@ -59,7 +59,7 @@ export default function ShoeSizeSelectionModal({
       <View style={styles.overlay}>
         <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>  
           {/* Header */}
-          <View style={[styles.header, { borderBottomColor: colors.border }]}>  
+          <View style={[styles.header, { borderBottomColor: '#ccc' }]}>  
             <Text style={[styles.headerTitle, { color: colors.text }]}>Select Shoe Size</Text>
             <TouchableOpacity onPress={handleClose}>
               <Text style={[styles.closeButton, { color: colors.tint }]}>✕</Text>
@@ -80,8 +80,8 @@ export default function ShoeSizeSelectionModal({
                 <TouchableOpacity
                   key={size}
                   style={[styles.sizeButton, {
-                    backgroundColor: selectedSize === size ? colors.tint : colors.card,
-                    borderColor: selectedSize === size ? colors.tint : colors.border,
+                    backgroundColor: selectedSize === size ? colors.tint : colors.background,
+                    borderColor: selectedSize === size ? colors.tint : '#ccc',
                   }]}
                   onPress={() => setSelectedSize(size)}
                 >

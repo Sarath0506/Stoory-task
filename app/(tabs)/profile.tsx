@@ -92,7 +92,7 @@ export default function ProfileScreen() {
           'Saved Addresses:\n\n' +
           'Home:\n' +
           '123 Main Street, Apartment 4B\n' +
-          'Mumbai, Maharashtra 400001\n\n' +
+          'velachery, chennai 400001\n\n' +
           'Office:\n' +
           '456 Business Park, Floor 12\n' +
           'Bangalore, Karnataka 560001\n\n' +
