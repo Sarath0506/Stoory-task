@@ -12,17 +12,22 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
 import { useUser } from '@/contexts/UserContext';
+import OTPVerificationModal from '@/components/OTPVerificationModal';
+import { authService } from '@/services/authService';
 
 export default function SignupScreen() {
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [contactInfo, setContactInfo] = useState('');
+  const [contactType, setContactType] = useState<'email' | 'phone'>('email');
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showOTPModal, setShowOTPModal] = useState(false);
+  const [isVerifyingOTP, setIsVerifyingOTP] = useState(false);
+  const [expectedOTP, setExpectedOTP] = useState('');
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { login } = useUser();
@@ -32,28 +37,29 @@ export default function SignupScreen() {
     return emailRegex.test(email);
   };
 
-  const validatePassword = (password: string) => {
-    return password.length >= 6;
+  const validatePhone = (phone: string) => {
+    const phoneRegex = /^[0-9]{10}$/;
+    return phoneRegex.test(phone);
   };
 
-  const handleSignup = async () => {
-    if (!fullName || !email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields');
+  const handleSendOTP = async () => {
+    if (!fullName.trim()) {
+      Alert.alert('Error', 'Please enter your full name');
       return;
     }
 
-    if (!validateEmail(email)) {
+    if (!contactInfo.trim()) {
+      Alert.alert('Error', 'Please enter your email or phone number');
+      return;
+    }
+
+    if (contactType === 'email' && !validateEmail(contactInfo)) {
       Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
 
-    if (!validatePassword(password)) {
-      Alert.alert('Error', 'Password must be at least 6 characters long');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+    if (contactType === 'phone' && !validatePhone(contactInfo)) {
+      Alert.alert('Error', 'Please enter a valid 10-digit phone number');
       return;
     }
 
@@ -63,27 +69,90 @@ export default function SignupScreen() {
     }
 
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    
+    try {
+      const response = await authService.generateOTP(contactInfo, contactType);
+      
+      if (response.success) {
+        setExpectedOTP(response.otp || '');
+        setShowOTPModal(true);
+        Alert.alert(
+          'OTP Sent',
+          `A 6-digit verification code has been sent to your ${contactType === 'email' ? 'email' : 'phone number'}`
+        );
+      } else {
+        Alert.alert('Error', response.message);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+    } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async (otp: string) => {
+    setIsVerifyingOTP(true);
+    
+    try {
+      const response = await authService.verifyOTP(otp, expectedOTP);
       
-      // Create user data
-      const userData = {
-        id: Date.now().toString(),
-        name: fullName,
-        email: email,
-      };
+      if (response.success) {
+        // Create new user account
+        const createResponse = await authService.createUser({
+          name: fullName,
+          email: contactType === 'email' ? contactInfo : undefined,
+          phone: contactType === 'phone' ? contactInfo : undefined,
+        });
+        
+        if (createResponse.success && createResponse.data) {
+          login(createResponse.data);
+          Alert.alert('Success', 'Account created successfully!', [
+            {
+              text: 'OK',
+              onPress: () => router.replace('/(tabs)'),
+            },
+          ]);
+        } else {
+          Alert.alert('Error', createResponse.message);
+        }
+      } else {
+        Alert.alert('Error', response.message);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to verify OTP. Please try again.');
+    } finally {
+      setIsVerifyingOTP(false);
+      setShowOTPModal(false);
+    }
+  };
+
+  const handleGoogleSignup = async () => {
+    if (!acceptTerms) {
+      Alert.alert('Error', 'Please accept the terms and conditions');
+      return;
+    }
+
+    setIsLoading(true);
+    
+    try {
+      const response = await authService.googleSignIn();
       
-      // Store user data in context
-      login(userData);
-      
-      Alert.alert('Success', 'Account created successfully!', [
-        {
-          text: 'OK',
-          onPress: () => router.replace('/(tabs)'),
-        },
-      ]);
-    }, 1500);
+      if (response.success && response.data) {
+        login(response.data);
+        Alert.alert('Success', 'Account created successfully!', [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(tabs)'),
+          },
+        ]);
+      } else {
+        Alert.alert('Error', response.message);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to sign up with Google. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -105,7 +174,7 @@ export default function SignupScreen() {
           <View style={[styles.inputContainer, { borderColor: colors.tabIconDefault }]}>
             <Text style={[styles.label, { color: colors.text }]}>Full Name</Text>
             <TextInput
-              style={[styles.input, { color: colors.text }]}
+              style={[styles.input, { color: colors.text, borderColor: colors.tabIconDefault }]}
               placeholder="Enter your full name"
               placeholderTextColor={colors.tabIconDefault}
               value={fullName}
@@ -114,40 +183,60 @@ export default function SignupScreen() {
             />
           </View>
 
+          {/* Contact Type Toggle */}
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                {
+                  backgroundColor: contactType === 'email' ? colors.tint : 'transparent',
+                  borderColor: colors.tint,
+                },
+              ]}
+              onPress={() => setContactType('email')}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  { color: contactType === 'email' ? 'white' : colors.tint },
+                ]}
+              >
+                Email
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                {
+                  backgroundColor: contactType === 'phone' ? colors.tint : 'transparent',
+                  borderColor: colors.tint,
+                },
+              ]}
+              onPress={() => setContactType('phone')}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  { color: contactType === 'phone' ? 'white' : colors.tint },
+                ]}
+              >
+                Phone
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={[styles.inputContainer, { borderColor: colors.tabIconDefault }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Email</Text>
+            <Text style={[styles.label, { color: colors.text }]}>
+              {contactType === 'email' ? 'Email Address' : 'Phone Number'}
+            </Text>
             <TextInput
-              style={[styles.input, { color: colors.text }]}
-              placeholder="Enter your email"
+              style={[styles.input, { color: colors.text, borderColor: colors.tabIconDefault }]}
+              placeholder={contactType === 'email' ? 'Enter your email' : 'Enter your phone number'}
               placeholderTextColor={colors.tabIconDefault}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
+              value={contactInfo}
+              onChangeText={setContactInfo}
+              keyboardType={contactType === 'email' ? 'email-address' : 'phone-pad'}
               autoCapitalize="none"
-            />
-          </View>
-
-          <View style={[styles.inputContainer, { borderColor: colors.tabIconDefault }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Password</Text>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              placeholder="Enter your password"
-              placeholderTextColor={colors.tabIconDefault}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
-
-          <View style={[styles.inputContainer, { borderColor: colors.tabIconDefault }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Confirm Password</Text>
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              placeholder="Confirm your password"
-              placeholderTextColor={colors.tabIconDefault}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
             />
           </View>
 
@@ -174,13 +263,34 @@ export default function SignupScreen() {
 
           <TouchableOpacity
             style={[styles.signupButton, { backgroundColor: colors.tint }]}
-            onPress={handleSignup}
+            onPress={handleSendOTP}
             disabled={isLoading}
           >
             <Text style={styles.signupButtonText}>
-              {isLoading ? 'Creating Account...' : 'Create Account'}
+              {isLoading ? 'Sending OTP...' : 'Send OTP'}
             </Text>
           </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.tabIconDefault }]} />
+            <Text style={[styles.dividerText, { color: colors.tabIconDefault }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.tabIconDefault }]} />
+          </View>
+
+          <View style={styles.socialButtonsContainer}>
+            <TouchableOpacity
+              style={[styles.socialButton, { borderColor: colors.tabIconDefault }]}
+              onPress={handleGoogleSignup}
+              disabled={isLoading}
+            >
+              <View style={styles.socialButtonContent}>
+                <Ionicons name="logo-google" size={18} color="#DB4437" style={styles.socialIcon} />
+                <Text style={[styles.socialButtonText, { color: colors.text }]}>
+                  Continue with Google
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
 
           <View style={styles.footer}>
             <Text style={[styles.footerText, { color: colors.tabIconDefault }]}>
@@ -192,6 +302,16 @@ export default function SignupScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* OTP Verification Modal */}
+      <OTPVerificationModal
+        visible={showOTPModal}
+        onClose={() => setShowOTPModal(false)}
+        onVerify={handleVerifyOTP}
+        contactInfo={contactInfo}
+        contactType={contactType}
+        isLoading={isVerifyingOTP}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -243,14 +363,28 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderWidth: 1,
     borderRadius: 8,
-    borderColor: '#E1E5E9',
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    marginBottom: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  toggleText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   termsContainer: {
-    marginBottom: 24,
-  },
-  checkboxContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    marginBottom: 24,
   },
   checkbox: {
     width: 20,
@@ -285,6 +419,45 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    fontSize: 14,
+  },
+  socialButtonsContainer: {
+    marginBottom: 24,
+  },
+  socialButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    minHeight: 48,
+  },
+  socialButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  socialIcon: {
+    marginRight: 12,
+  },
+  socialButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   footer: {
     flexDirection: 'row',

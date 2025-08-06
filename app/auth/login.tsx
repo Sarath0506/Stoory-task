@@ -16,47 +16,131 @@ import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/useColorScheme';
 import { Colors } from '@/constants/Colors';
 import { useUser } from '@/contexts/UserContext';
+import OTPVerificationModal from '@/components/OTPVerificationModal';
+import { authService } from '@/services/authService';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [contactInfo, setContactInfo] = useState('');
+  const [contactType, setContactType] = useState<'email' | 'phone'>('email');
   const [isLoading, setIsLoading] = useState(false);
+  const [showOTPModal, setShowOTPModal] = useState(false);
+  const [isVerifyingOTP, setIsVerifyingOTP] = useState(false);
+  const [expectedOTP, setExpectedOTP] = useState('');
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { login } = useUser();
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const validatePhone = (phone: string) => {
+    const phoneRegex = /^[0-9]{10}$/;
+    return phoneRegex.test(phone);
+  };
+
+  const handleSendOTP = async () => {
+    if (!contactInfo.trim()) {
+      Alert.alert('Error', 'Please enter your email or phone number');
+      return;
+    }
+
+    if (contactType === 'email' && !validateEmail(contactInfo)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
+    if (contactType === 'phone' && !validatePhone(contactInfo)) {
+      Alert.alert('Error', 'Please enter a valid 10-digit phone number');
       return;
     }
 
     setIsLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    
+    try {
+      const response = await authService.generateOTP(contactInfo, contactType);
+      
+      if (response.success) {
+        setExpectedOTP(response.otp || '');
+        setShowOTPModal(true);
+        Alert.alert(
+          'OTP Sent',
+          `A 6-digit verification code has been sent to your ${contactType === 'email' ? 'email' : 'phone number'}`
+        );
+      } else {
+        Alert.alert('Error', response.message);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to send OTP. Please try again.');
+    } finally {
       setIsLoading(false);
-      
-      // Create user data from email
-      const userData = {
-        id: Date.now().toString(),
-        name: email.split('@')[0], // Use email prefix as name
-        email: email,
-      };
-      
-      // Store user data in context
-      login(userData);
-      
-      // Navigate to main app
-      router.replace('/(tabs)');
-    }, 1500);
+    }
   };
 
-  const handleGoogleLogin = () => {
-    Alert.alert('Google Login', 'Google login functionality would be implemented here');
+  const handleVerifyOTP = async (otp: string) => {
+    setIsVerifyingOTP(true);
+    
+    try {
+      const response = await authService.verifyOTP(otp, expectedOTP);
+      
+      if (response.success) {
+        // Check if user exists
+        const userExists = await authService.checkUserExists(contactInfo, contactType);
+        
+        if (userExists) {
+          // Login existing user
+          const loginResponse = await authService.loginUser(contactInfo, contactType);
+          if (loginResponse.success && loginResponse.data) {
+            login(loginResponse.data);
+            router.replace('/(tabs)');
+          }
+        } else {
+          // Create new user
+          const createResponse = await authService.createUser({
+            name: contactInfo.split('@')[0] || contactInfo,
+            email: contactType === 'email' ? contactInfo : undefined,
+            phone: contactType === 'phone' ? contactInfo : undefined,
+          });
+          
+          if (createResponse.success && createResponse.data) {
+            login(createResponse.data);
+            router.replace('/(tabs)');
+          }
+        }
+      } else {
+        Alert.alert('Error', response.message);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to verify OTP. Please try again.');
+    } finally {
+      setIsVerifyingOTP(false);
+      setShowOTPModal(false);
+    }
   };
 
-  const handleFacebookLogin = () => {
-    Alert.alert('Facebook Login', 'Facebook login functionality would be implemented here');
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    
+    try {
+      const response = await authService.googleSignIn();
+      
+      if (response.success && response.data) {
+        login(response.data);
+        router.replace('/(tabs)');
+      } else {
+        Alert.alert('Error', response.message);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to sign in with Google. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleContactTypeToggle = () => {
+    setContactType(contactType === 'email' ? 'phone' : 'email');
+    setContactInfo('');
   };
 
   return (
@@ -75,44 +159,70 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.form}>
+          {/* Contact Type Toggle */}
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                {
+                  backgroundColor: contactType === 'email' ? colors.tint : 'transparent',
+                  borderColor: colors.tint,
+                },
+              ]}
+              onPress={() => setContactType('email')}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  { color: contactType === 'email' ? 'white' : colors.tint },
+                ]}
+              >
+                Email
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.toggleButton,
+                {
+                  backgroundColor: contactType === 'phone' ? colors.tint : 'transparent',
+                  borderColor: colors.tint,
+                },
+              ]}
+              onPress={() => setContactType('phone')}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  { color: contactType === 'phone' ? 'white' : colors.tint },
+                ]}
+              >
+                Phone
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={[styles.inputContainer, { borderColor: colors.tabIconDefault }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Email / Username</Text>
+            <Text style={[styles.label, { color: colors.text }]}>
+              {contactType === 'email' ? 'Email Address' : 'Phone Number'}
+            </Text>
             <TextInput
               style={[styles.input, { color: colors.text, borderColor: colors.tabIconDefault }]}
-              placeholder="Enter your email"
+              placeholder={contactType === 'email' ? 'Enter your email' : 'Enter your phone number'}
               placeholderTextColor={colors.tabIconDefault}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
+              value={contactInfo}
+              onChangeText={setContactInfo}
+              keyboardType={contactType === 'email' ? 'email-address' : 'phone-pad'}
               autoCapitalize="none"
             />
           </View>
 
-          <View style={[styles.inputContainer, { borderColor: colors.tabIconDefault }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Password</Text>
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: colors.tabIconDefault }]}
-              placeholder="Enter your password"
-              placeholderTextColor={colors.tabIconDefault}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
-
-          <TouchableOpacity style={styles.forgotPassword}>
-            <Text style={[styles.forgotPasswordText, { color: colors.tint }]}>
-              Forgot Password?
-            </Text>
-          </TouchableOpacity>
-
           <TouchableOpacity
-            style={[styles.loginButton, { backgroundColor: colors.tint }]}
-            onPress={handleLogin}
+            style={[styles.sendOTPButton, { backgroundColor: colors.tint }]}
+            onPress={handleSendOTP}
             disabled={isLoading}
           >
-            <Text style={styles.loginButtonText}>
-              {isLoading ? 'Signing In...' : 'Sign In'}
+            <Text style={styles.sendOTPButtonText}>
+              {isLoading ? 'Sending OTP...' : 'Send OTP'}
             </Text>
           </TouchableOpacity>
 
@@ -126,20 +236,13 @@ export default function LoginScreen() {
             <TouchableOpacity
               style={[styles.socialButton, { borderColor: colors.tabIconDefault }]}
               onPress={handleGoogleLogin}
+              disabled={isLoading}
             >
               <View style={styles.socialButtonContent}>
                 <Ionicons name="logo-google" size={18} color="#DB4437" style={styles.socialIcon} />
-                <Text style={[styles.socialButtonText, { color: colors.text }]}>Continue with Google</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.socialButton, { borderColor: colors.tabIconDefault }]}
-              onPress={handleFacebookLogin}
-            >
-              <View style={styles.socialButtonContent}>
-                <Ionicons name="logo-facebook" size={18} color="#1877F2" style={styles.socialIcon} />
-                <Text style={[styles.socialButtonText, { color: colors.text }]}>Continue with Facebook</Text>
+                <Text style={[styles.socialButtonText, { color: colors.text }]}>
+                  Continue with Google
+                </Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -154,6 +257,16 @@ export default function LoginScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* OTP Verification Modal */}
+      <OTPVerificationModal
+        visible={showOTPModal}
+        onClose={() => setShowOTPModal(false)}
+        onVerify={handleVerifyOTP}
+        contactInfo={contactInfo}
+        contactType={contactType}
+        isLoading={isVerifyingOTP}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -167,17 +280,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 60,
     paddingBottom: 40,
-    justifyContent: 'space-between', // Better distribution of content
+    justifyContent: 'space-between',
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40, // Adjusted spacing
+    marginBottom: 40,
   },
   brandName: {
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 1.2,
-    marginBottom: 16, // Increased spacing
+    marginBottom: 16,
   },
   title: {
     fontSize: 32,
@@ -189,15 +302,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
-    paddingHorizontal: 16, // Added horizontal padding for better text wrapping
+    paddingHorizontal: 16,
   },
   form: {
     flex: 1,
     justifyContent: 'center',
-    maxWidth: '100%', // Ensure form doesn't exceed screen width
+    maxWidth: '100%',
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    marginBottom: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  toggleText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   inputContainer: {
-    marginBottom: 20, // Optimized spacing
+    marginBottom: 20,
   },
   label: {
     fontSize: 16,
@@ -207,26 +337,18 @@ const styles = StyleSheet.create({
   input: {
     fontSize: 16,
     paddingHorizontal: 16,
-    paddingVertical: 14, // Slightly increased padding
+    paddingVertical: 14,
     borderWidth: 1,
     borderRadius: 8,
-    minHeight: 48, // Ensure consistent height
+    minHeight: 48,
   },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: 24, // Optimized spacing
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  loginButton: {
+  sendOTPButton: {
     paddingVertical: 16,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24, // Optimized spacing
-    minHeight: 50, // Slightly larger for primary action
+    marginBottom: 24,
+    minHeight: 50,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -236,7 +358,7 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
   },
-  loginButtonText: {
+  sendOTPButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
@@ -255,7 +377,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   socialButtonsContainer: {
-    marginBottom: 24, // Optimized spacing
+    marginBottom: 24,
   },
   socialButton: {
     paddingVertical: 14,
@@ -284,7 +406,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16, // Reduced margin for better balance
+    marginTop: 16,
   },
   footerText: {
     fontSize: 14,
